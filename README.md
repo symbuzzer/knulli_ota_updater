@@ -9,6 +9,7 @@ Also this tool updates itself silencely when an update is available.
 - Download [latest knulli-ota-updater](https://github.com/symbuzzer/knulli_ota_updater/releases/latest/download/knulli_ota_updater.pygame)
 - Copy knulli_ota_updater.pygame to ROMS/PYGAME folder as a game rom
 - From Knulli, refresh gamelist and run knulli_ota_updater from PYGAME collection
+- ! USE IT AT YOUR OWN RISK
 
 ## What is new?
 [Changelog](https://github.com/symbuzzer/knulli_ota_updater/blob/main/CHANGELOG.md)
