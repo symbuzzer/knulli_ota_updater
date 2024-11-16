@@ -154,6 +154,7 @@ def update_tool():
 
 if __name__ == "__main__":
     show_message(f"Starting Knulli OTA Updater v{CONFIG['scriptVersion']} by Ali BEYAZ...")
+
     
     if not check_internet():
         show_message("Error: no internet connection, exiting...")
@@ -167,6 +168,8 @@ if __name__ == "__main__":
 
         local_version = get_local_version()
         github_version = get_github_version()
+        show_message(f"Installed Knulli version: {local_version} by Ali BEYAZ...")
+        show_message(f"Github Knulli version: {github_version} by Ali BEYAZ...")
         if github_version is None:
             show_message("Error: github problem, exiting...")
         elif local_version is not None and parse_version(local_version) >= parse_version(github_version):
