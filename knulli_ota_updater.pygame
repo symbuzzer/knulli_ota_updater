@@ -1,1 +1,187 @@
-#
+import pygame
+import requests
+import os
+import shutil
+import tarfile
+import subprocess
+
+CONFIG = {
+    "scriptVersion": "1.0.0",
+    "ota_directory": "/media/BATOCERA",
+    "download_directory": "/userdata/system",
+    "github_tool_url": "https://github.com/symbuzzer/knulli_ota_updater/releases/latest/download/knulli_ota_updater.pygame",
+    "github_version_url": "https://raw.githubusercontent.com/symbuzzer/knulli_ota_updater/main/ota_version",
+    "github_ota_url": "https://github.com/knulli-cfw/distribution/releases/latest/download/knulli-h700-{board_value}-{github_version}-boot.tar.xz",
+    "local_version_file": "/etc/os-release",
+    "batocera_board_file": "/media/BATOCERA/boot/batocera.board",
+    "batocera_update_file": "/media/BATOCERA/boot/batocera.update",
+}
+
+pygame.init()
+font = pygame.font.Font(None, 36)
+screen = pygame.display.set_mode((800, 600))
+pygame.display.set_caption("Knulli OTA Updater")
+
+def show_message(message):
+    screen.fill((0, 0, 0))
+    text_surface = font.render(message, True, (255, 255, 255))
+    text_rect = text_surface.get_rect(center=(screen.get_width() // 2, screen.get_height() // 2))
+    screen.blit(text_surface, text_rect.topleft)
+    pygame.display.flip()
+    pygame.time.wait(2000)
+
+def check_internet():
+    try:
+        requests.get("http://www.avalibeyaz.com", timeout=5)
+        return True
+    except requests.ConnectionError:
+        return False
+
+def get_local_version():
+    if not os.path.exists(CONFIG["local_version_file"]):
+        return None
+    
+    os_version = None
+    os_date = None
+    
+    with open(CONFIG["local_version_file"], 'r') as file:
+        for line in file:
+            if line.startswith("OS_VERSION="):
+                os_version = line.split("=")[1].strip().replace('"', '')
+            elif line.startswith("OS_DATE="):
+                os_date = line.split("=")[1].strip().replace('"', '')
+    
+    if os_version and os_date:
+        return f"{os_version}-{os_date}"
+    
+    return None
+
+def get_batocera_board_value():
+    if not os.path.exists(CONFIG["batocera_board_file"]):
+        return None
+    with open(CONFIG["batocera_board_file"], 'r') as file:
+        return file.read().strip()
+    
+    return None
+
+def get_github_version():
+    response = requests.get(CONFIG["github_version_url"])
+    if response.status_code != 200:
+        return None
+    return response.text.strip()
+
+def get_tool_version_from_github():
+    response = requests.get(CONFIG["github_tool_url"])
+    if response.status_code != 200:
+        return None
+    for line in response.text.splitlines():
+        if "scriptVersion =" in line:
+            return line.split("=")[1].strip().replace('"', '')
+    return None
+
+def parse_version(version):
+    try:
+        return tuple(map(int, version.split(".")))
+    except ValueError:
+        return (0, 0, 0)
+
+def download_and_extract_ota(ota_zip_url, board_value, github_version):
+    local_tar_path = os.path.join(CONFIG["download_directory"], f"knulli-h700-{board_value}-{github_version}-boot.tar.xz")
+    
+    try:
+        show_message("Downloading OTA update...")
+        response = requests.get(ota_zip_url, stream=True)
+        if response.status_code == 200:
+            with open(local_tar_path, 'wb') as file:
+                shutil.copyfileobj(response.raw, file)
+            show_message("Download complete!")
+        else:
+            show_message(f"Error: Download failed with status code {response.status_code}, exiting...")
+            return False
+    except Exception as e:
+        show_message(f"Error: download failed - {str(e)}, exiting...")
+        return False
+    
+    try:
+        show_message("Running remount command...")
+        subprocess.run(["batocera-es-swissknife", "--remount"], check=True)
+        show_message("Remount completed!")
+
+        show_message("Extracting OTA update...")
+        with tarfile.open(local_tar_path, "r:xz") as tar:
+            tar.extractall(path=CONFIG["ota_directory"])
+        show_message("Extraction complete!")
+    except subprocess.CalledProcessError as e:
+        show_message(f"Error: failed to run remount command - {str(e)}, exiting...")
+        return False
+    except Exception as e:
+        show_message(f"Error during extraction: {str(e)}, exiting...")
+        return False
+    
+    try:
+        os.remove(local_tar_path)
+        show_message("Tar file removed!")
+    except Exception as e:
+        show_message(f"Error removing tar file: {str(e)}")
+
+    try:
+        update_file_path = CONFIG["batocera_update_file"]
+        if os.path.exists(update_file_path):
+            os.rename(update_file_path, update_file_path.replace("batocera.update", "batocera"))
+            show_message("batocera.update renamed to batocera!")
+        else:
+            show_message("Error: batocera.update not found, exiting...")
+            return False
+    except Exception as e:
+        show_message(f"Error renaming batocera.update: {str(e)}, exiting...")
+        return False
+
+    return True
+
+def update_tool():
+    local_tool_path = "/userdata/roms/pygame/knulli_ota_updater.pygame"
+    
+    try:
+        response = requests.get(CONFIG["github_tool_url"], timeout=10)
+        if response.status_code == 200:
+            with open(local_tool_path, 'wb') as file:
+                file.write(response.content)
+            show_message("Knulli OTA Updater updated successfully, please restart")
+        else:
+            show_message(f"Error: download error {response.status_code}, exiting...")
+    except Exception as e:
+        show_message(f"Error: download failed {str(e)}, exiting...")
+
+if __name__ == "__main__":
+    show_message(f"Starting Knulli OTA Updater v{CONFIG['scriptVersion']} by Ali BEYAZ...")
+    
+    if not check_internet():
+        show_message("Error: no internet connection, exiting...")
+    else:
+        github_tool_version = get_tool_version_from_github()
+        if github_tool_version and parse_version(github_tool_version) > parse_version(CONFIG["scriptVersion"]):
+            show_message(f"New Knulli OTA Updater update found: {github_tool_version}, updating...")
+            update_tool()
+            pygame.quit()
+            exit()
+
+        local_version = get_local_version()
+        github_version = get_github_version()
+        if github_version is None:
+            show_message("Error: github problem, exiting...")
+        elif local_version is not None and parse_version(local_version) >= parse_version(github_version):
+            show_message("There is no new OTA update on Github, exiting...")
+        else:
+            show_message(f"New OTA version found: {github_version}")
+            batocera_board_value = get_batocera_board_value()
+            if batocera_board_value is None:
+                show_message("Error: batocera.board file not found, exiting...")
+            else:
+                ota_zip_url = CONFIG["github_ota_url"].format(board_value=batocera_board_value, github_version=github_version)
+                if download_and_extract_ota(ota_zip_url, batocera_board_value, github_version):
+                    show_message("OTA update completed successfully.")
+                    show_message("You should reboot for applying new update")
+                else:
+                    show_message("Error: OTA update failed.")
+    
+    pygame.quit()
